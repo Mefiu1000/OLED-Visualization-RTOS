@@ -2,10 +2,13 @@
 CAD.formats=
 CAD.pinconfig=
 CAD.provider=
+FREERTOS.BinarySemaphores01=SemaphoreBmpQueue,Dynamic,NULL
 FREERTOS.FootprintOK=true
-FREERTOS.IPParameters=Tasks01,FootprintOK,Mutexes01
+FREERTOS.IPParameters=Tasks01,FootprintOK,Mutexes01,Queues01,Timers01,BinarySemaphores01
 FREERTOS.Mutexes01=MutexPrintf,Dynamic,NULL;MutexI2C1,Dynamic,NULL;MutexBmpData,Dynamic,NULL
-FREERTOS.Tasks01=HeartbeatTask,24,128,StartHeartbeatTask,Default,NULL,Dynamic,NULL,NULL;Bmp280Task,24,256,StartBmp280Task,Default,NULL,Dynamic,NULL,NULL;OledTask,24,128,StartOledTask,Default,NULL,Dynamic,NULL,NULL
+FREERTOS.Queues01=QueueBmpData,8,BmpData_t,0,Dynamic,NULL,NULL
+FREERTOS.Tasks01=HeartbeatTask,24,128,StartHeartbeatTask,Default,NULL,Dynamic,NULL,NULL;Bmp280Task,32,256,StartBmp280Task,Default,NULL,Dynamic,NULL,NULL;OledTask,24,256,StartOledTask,Default,NULL,Dynamic,NULL,NULL
+FREERTOS.Timers01=TimerBmpData,TimerBmpDataCallback,osTimerPeriodic,Default,NULL,Dynamic,NULL
 File.Version=6
 I2C1.I2C_Mode=I2C_Fast
 I2C1.IPParameters=I2C_Mode

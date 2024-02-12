@@ -13,6 +13,7 @@
 #define SSD1306_TIMEOUT 1000
 
 //#define SSD1306_USE_DMA
+#define SSD1306_USE_FREERTOS
 
 //Registers
 /// fit into the SSD1306_ naming scheme

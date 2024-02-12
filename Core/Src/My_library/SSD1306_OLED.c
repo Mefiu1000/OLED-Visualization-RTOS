@@ -10,6 +10,13 @@
 
 #include "My_library/SSD1306_OLED.h"
 
+#ifdef SSD1306_USE_FREERTOS
+#include "cmsis_os.h"
+
+extern osMutexId_t MutexI2C1Handle;
+
+#endif
+
 I2C_HandleTypeDef  *oled_i2c;
 
 static uint8_t buffer[SSD1306_BUFFER_SIZE]; //OLED memory /8 cuz every pixel is 1 bit
@@ -76,6 +83,7 @@ void SSD1306_Clear(uint8_t color)
 
 void SSD1306_Display(void)
 {
+#ifndef SSD1306_USE_FREERTOS
 	SSD1306_Command(SSD1306_PAGEADDR);
 	SSD1306_Command(0); 					// Page start address
 	SSD1306_Command(0xFF); 					// Page end (not really, but works here)
@@ -84,6 +92,26 @@ void SSD1306_Display(void)
 	SSD1306_Command(SSD1306_LCDWIDTH - 1); 	// Column end address
 
 	SSD1306_Data(buffer,SSD1306_BUFFER_SIZE);
+#else
+	//divide sending oled data to 8 parts i.e. 8 strips
+	for(uint8_t i = 0; i < 8; i++)
+	{
+		osMutexAcquire(MutexI2C1Handle, osWaitForever);
+
+		SSD1306_Command(SSD1306_PAGEADDR);
+		SSD1306_Command(i); 					// Page start address
+		SSD1306_Command(i); 					// Page end (not really, but works here)
+		SSD1306_Command(SSD1306_COLUMNADDR); 	// Column start address
+		SSD1306_Command(0);
+		SSD1306_Command(SSD1306_LCDWIDTH - 1); 	// Column end address
+
+		SSD1306_Data(buffer + (i * SSD1306_LCDWIDTH),SSD1306_LCDWIDTH);
+
+		osMutexRelease(MutexI2C1Handle);
+		osThreadYield(); //context yield in case other task waits (could just wait for systick but its faster)
+	}
+
+#endif
 }
 
 void SSD1306_Init(I2C_HandleTypeDef *i2c)
