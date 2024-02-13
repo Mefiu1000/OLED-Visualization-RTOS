@@ -27,12 +27,15 @@
 /* USER CODE BEGIN Includes */
 #include "i2c.h"
 #include "usart.h"
+#include "tim.h"
+#include "adc.h"
 
 #include "My_library/BMP280.h"
 #include "My_library/SSD1306_OLED.h"
 #include "My_library/GFX_BW.h"
 #include "My_library/fonts/fonts.h"
 
+#include "arm_math.h"
 #include "printf.h"
 /* USER CODE END Includes */
 
@@ -43,7 +46,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define FFT_SAMPLES 1024
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -59,6 +62,11 @@ typedef struct
 	float Pressure;
 	float Temperature;
 }BmpData_t;
+
+typedef struct
+{
+	uint8_t OutFreqArray[10];
+}FftData_t;
 
 /* USER CODE END Variables */
 /* Definitions for HeartbeatTask */
@@ -80,12 +88,24 @@ osThreadId_t OledTaskHandle;
 const osThreadAttr_t OledTask_attributes = {
   .name = "OledTask",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityBelowNormal,
+};
+/* Definitions for FFTTask */
+osThreadId_t FFTTaskHandle;
+const osThreadAttr_t FFTTask_attributes = {
+  .name = "FFTTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for QueueBmpData */
 osMessageQueueId_t QueueBmpDataHandle;
 const osMessageQueueAttr_t QueueBmpData_attributes = {
   .name = "QueueBmpData"
+};
+/* Definitions for QueueFftData */
+osMessageQueueId_t QueueFftDataHandle;
+const osMessageQueueAttr_t QueueFftData_attributes = {
+  .name = "QueueFftData"
 };
 /* Definitions for TimerBmpData */
 osTimerId_t TimerBmpDataHandle;
@@ -115,12 +135,13 @@ const osSemaphoreAttr_t SemaphoreBmpQueue_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+void CalculateFFT(arm_rfft_fast_instance_f32 *FFTHandler,float *FFT_InBuffer, float *FFT_OutBuffer, FftData_t *OutFreqArray);
 /* USER CODE END FunctionPrototypes */
 
 void StartHeartbeatTask(void *argument);
 void StartBmp280Task(void *argument);
 void StartOledTask(void *argument);
+void StartFFTTask(void *argument);
 void TimerBmpDataCallback(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -168,6 +189,9 @@ void MX_FREERTOS_Init(void) {
   /* creation of QueueBmpData */
   QueueBmpDataHandle = osMessageQueueNew (8, sizeof(BmpData_t), &QueueBmpData_attributes);
 
+  /* creation of QueueFftData */
+  QueueFftDataHandle = osMessageQueueNew (8, sizeof(FftData_t), &QueueFftData_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -181,6 +205,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of OledTask */
   OledTaskHandle = osThreadNew(StartOledTask, NULL, &OledTask_attributes);
+
+  /* creation of FFTTask */
+  FFTTaskHandle = osThreadNew(StartFFTTask, NULL, &FFTTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -259,10 +286,9 @@ void StartOledTask(void *argument)
 {
   /* USER CODE BEGIN StartOledTask */
 	char Message[32];
-	uint8_t i = 0;
 
 	BmpData_t _BmpData; // floor char'_' to distinct  task variables
-
+	FftData_t _FftData;
 	osMutexAcquire(MutexI2C1Handle, osWaitForever);
 	SSD1306_Init(&hi2c1);
 	osMutexRelease(MutexI2C1Handle);
@@ -271,33 +297,76 @@ void StartOledTask(void *argument)
 
 	SSD1306_Clear(BLACK);
 
-	//osMutexAcquire(MutexI2C1Handle, osWaitForever);
 	SSD1306_Display();
-	//osMutexRelease(MutexI2C1Handle);
   /* Infinite loop */
   for(;;)
   {
 		SSD1306_Clear(BLACK);
 
-		sprintf(Message, "Hello %d",i++);
-		GFX_DrawString(0, 0, Message, WHITE, 0);
-
-
 		//wait for data from BMP
-		osMessageQueueGet(QueueBmpDataHandle, &_BmpData, NULL, osWaitForever);
+		osMessageQueueGet(QueueBmpDataHandle, &_BmpData, NULL, 0);
+
+		osMessageQueueGet(QueueFftDataHandle, &_FftData, NULL, 0);
 
 		sprintf(Message, "Press: %.2f", _BmpData.Pressure);
-		GFX_DrawString(0, 10, Message, WHITE, 0);
+		GFX_DrawString(0, 0, Message, WHITE, 0);
 
 		sprintf(Message, "Temp: %.2f", _BmpData.Temperature);
-		GFX_DrawString(0, 20, Message, WHITE, 0);
+		GFX_DrawString(0, 10, Message, WHITE, 0);
 
-		//osMutexAcquire(MutexI2C1Handle, osWaitForever);
+		for(uint8_t i = 0; i < 10; i++)
+		{
+			GFX_DrawFillRectangle(10 + (i * 11), 64 - _FftData.OutFreqArray[i], 10, _FftData.OutFreqArray[i], WHITE);
+		}
+
 		SSD1306_Display();
-		//osMutexRelease(MutexI2C1Handle);
-		//osDelay(100);
+
   }
   /* USER CODE END StartOledTask */
+}
+
+/* USER CODE BEGIN Header_StartFFTTask */
+/**
+* @brief Function implementing the FFTTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartFFTTask */
+void StartFFTTask(void *argument)
+{
+  /* USER CODE BEGIN StartFFTTask */
+	arm_rfft_fast_instance_f32 FFTHandler;
+
+	//FFT
+	uint16_t *AdcMicrophone;
+	float *FFT_InBuffer;
+	float *FFT_OutBuffer;
+	FftData_t FftData;
+
+	AdcMicrophone = pvPortMalloc(FFT_SAMPLES * sizeof(uint16_t));
+	FFT_InBuffer = pvPortMalloc(FFT_SAMPLES * sizeof(float));
+	FFT_OutBuffer = pvPortMalloc(FFT_SAMPLES * sizeof(float));
+
+	HAL_TIM_Base_Start(&htim2);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcMicrophone, FFT_SAMPLES);
+	arm_rfft_fast_init_f32(&FFTHandler, FFT_SAMPLES);
+  /* Infinite loop */
+  for(;;)
+  {
+
+	  osThreadFlagsWait(0x01, osFlagsWaitAll, osWaitForever);
+	  //put samples into input buffer
+
+	  for(uint32_t i = 0; i < FFT_SAMPLES; i++)
+	  {
+		  FFT_InBuffer[i] = (float)AdcMicrophone[i];
+	  }
+
+	  CalculateFFT(&FFTHandler, FFT_InBuffer, FFT_OutBuffer, &FftData);
+
+	  osMessageQueuePut(QueueFftDataHandle, &FftData, 0, osWaitForever);
+  }
+  /* USER CODE END StartFFTTask */
 }
 
 /* TimerBmpDataCallback function */
@@ -317,6 +386,55 @@ void _putchar(char character)
 	osMutexAcquire(MutexPrintfHandle, osWaitForever);
 	HAL_UART_Transmit(&huart2, (uint8_t*)&character, 1, 1000);
 	osMutexRelease(MutexPrintfHandle);
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+	if(hadc->Instance == ADC1)
+	{
+		osThreadFlagsSet(FFTTaskHandle, 0x01);
+	}
+}
+
+
+float complexABS(float real, float compl)
+{
+	return sqrt(real * real + compl * compl);
+}
+
+void CalculateFFT(arm_rfft_fast_instance_f32 *FFTHandler,float *FFT_InBuffer, float *FFT_OutBuffer, FftData_t *FftData)
+{
+	arm_rfft_fast_f32(FFTHandler, FFT_InBuffer, FFT_OutBuffer, 0);
+
+	int *Freqs = pvPortMalloc(FFT_SAMPLES * sizeof(int));
+	int FreqPoint = 0;
+	int Offset = 45; //noise floor offset
+
+	//calc abs values and linear to dB
+	for(int i = 0; i < FFT_SAMPLES; i += 2)
+	{
+		Freqs[FreqPoint] = (int)(20 * log10f(complexABS(FFT_OutBuffer[i], FFT_OutBuffer[i + 1]))) - Offset; //conv to dB
+
+		if(Freqs[FreqPoint] < 0)
+		{
+			Freqs[FreqPoint] = 0;
+		}
+		FreqPoint++;
+	}
+
+	FftData->OutFreqArray[0] = (uint8_t)Freqs[1]; //22 Hz
+	FftData->OutFreqArray[1] = (uint8_t)Freqs[2]; //63 Hz
+	FftData->OutFreqArray[2] = (uint8_t)Freqs[3]; //125 Hz
+	FftData->OutFreqArray[3] = (uint8_t)Freqs[6]; //250 Hz
+	FftData->OutFreqArray[4] = (uint8_t)Freqs[12]; //500 Hz
+	FftData->OutFreqArray[5] = (uint8_t)Freqs[23]; //1000 Hz
+	FftData->OutFreqArray[6] = (uint8_t)Freqs[51]; //2200 Hz
+	FftData->OutFreqArray[7] = (uint8_t)Freqs[104]; //4500 Hz
+	FftData->OutFreqArray[8] = (uint8_t)Freqs[207]; //9000 Hz
+	FftData->OutFreqArray[9] = (uint8_t)Freqs[344]; //15000 Hz
+
+	vPortFree(Freqs);
+
 }
 /* USER CODE END Application */
 

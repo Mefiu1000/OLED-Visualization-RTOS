@@ -14,7 +14,7 @@
 
 //#define SSD1306_USE_DMA
 #define SSD1306_USE_FREERTOS
-
+#define SSD1306_BRIGHTNESS 0x10 //0-255
 //Registers
 /// fit into the SSD1306_ naming scheme
 #define SSD1306_BLACK 0   ///< Draw 'off' pixels
