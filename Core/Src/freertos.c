@@ -222,7 +222,10 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE BEGIN Header_StartHeartbeatTask */
 /**
   * @brief  Function implementing the HeartbeatTask thread.
+  * Task used only to show that program is running.
+  *
   * @param  argument: Not used
+  *
   * @retval None
   */
 /* USER CODE END Header_StartHeartbeatTask */
@@ -233,7 +236,7 @@ void StartHeartbeatTask(void *argument)
   for(;;)
   {
 	  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-    osDelay(500);
+	  osDelay(500);
   }
   /* USER CODE END StartHeartbeatTask */
 }
@@ -241,7 +244,11 @@ void StartHeartbeatTask(void *argument)
 /* USER CODE BEGIN Header_StartBmp280Task */
 /**
 * @brief Function implementing the Bmp280Task thread.
+* It initiates and executes BMP280 measurements, which are then placed in a queue.
+* Subsequently, they are retrieved by the OledTask.
+*
 * @param argument: Not used
+*
 * @retval None
 */
 /* USER CODE END Header_StartBmp280Task */
@@ -278,14 +285,19 @@ void StartBmp280Task(void *argument)
 /* USER CODE BEGIN Header_StartOledTask */
 /**
 * @brief Function implementing the OledTask thread.
+* It initiates OLED configuration and executes it's operation.
+* Data from BMP280 sensor is get from queue and displayed on screen as numbers.
+* Data from microphone is get from queue and displayed as columns chart.
+*
 * @param argument: Not used
+*
 * @retval None
 */
 /* USER CODE END Header_StartOledTask */
 void StartOledTask(void *argument)
 {
   /* USER CODE BEGIN StartOledTask */
-	char Message[32];
+	char _Message[32];
 
 	BmpData_t _BmpData; // floor char'_' to distinct  task variables
 	FftData_t _FftData;
@@ -308,11 +320,11 @@ void StartOledTask(void *argument)
 
 		osMessageQueueGet(QueueFftDataHandle, &_FftData, NULL, 0);
 
-		sprintf(Message, "Press: %.2f", _BmpData.Pressure);
-		GFX_DrawString(0, 0, Message, WHITE, 0);
+		sprintf(_Message, "Press: %.2f", _BmpData.Pressure);
+		GFX_DrawString(0, 0, _Message, WHITE, 0);
 
-		sprintf(Message, "Temp: %.2f", _BmpData.Temperature);
-		GFX_DrawString(0, 10, Message, WHITE, 0);
+		sprintf(_Message, "Temp: %.2f", _BmpData.Temperature);
+		GFX_DrawString(0, 10, _Message, WHITE, 0);
 
 		for(uint8_t i = 0; i < 10; i++)
 		{
@@ -320,7 +332,6 @@ void StartOledTask(void *argument)
 		}
 
 		SSD1306_Display();
-
   }
   /* USER CODE END StartOledTask */
 }
@@ -328,28 +339,32 @@ void StartOledTask(void *argument)
 /* USER CODE BEGIN Header_StartFFTTask */
 /**
 * @brief Function implementing the FFTTask thread.
+* It initiates ADC, TIM and arm math and executes sound measurements with 44,1 kHz frequency.
+* Subsequently, the data is processed with FFT to distinct certain frequencies.
+*
 * @param argument: Not used
+*
 * @retval None
 */
 /* USER CODE END Header_StartFFTTask */
 void StartFFTTask(void *argument)
 {
   /* USER CODE BEGIN StartFFTTask */
-	arm_rfft_fast_instance_f32 FFTHandler;
+	arm_rfft_fast_instance_f32 _FFTHandler;
 
 	//FFT
-	uint16_t *AdcMicrophone;
-	float *FFT_InBuffer;
-	float *FFT_OutBuffer;
-	FftData_t FftData;
+	uint16_t *_AdcMicrophone;
+	float *_FFT_InBuffer;
+	float *_FFT_OutBuffer;
+	FftData_t _FftData;
 
-	AdcMicrophone = pvPortMalloc(FFT_SAMPLES * sizeof(uint16_t));
-	FFT_InBuffer = pvPortMalloc(FFT_SAMPLES * sizeof(float));
-	FFT_OutBuffer = pvPortMalloc(FFT_SAMPLES * sizeof(float));
+	_AdcMicrophone = pvPortMalloc(FFT_SAMPLES * sizeof(uint16_t));
+	_FFT_InBuffer = pvPortMalloc(FFT_SAMPLES * sizeof(float));
+	_FFT_OutBuffer = pvPortMalloc(FFT_SAMPLES * sizeof(float));
 
 	HAL_TIM_Base_Start(&htim2);
-	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcMicrophone, FFT_SAMPLES);
-	arm_rfft_fast_init_f32(&FFTHandler, FFT_SAMPLES);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)_AdcMicrophone, FFT_SAMPLES);
+	arm_rfft_fast_init_f32(&_FFTHandler, FFT_SAMPLES);
   /* Infinite loop */
   for(;;)
   {
@@ -359,12 +374,12 @@ void StartFFTTask(void *argument)
 
 	  for(uint32_t i = 0; i < FFT_SAMPLES; i++)
 	  {
-		  FFT_InBuffer[i] = (float)AdcMicrophone[i];
+		  _FFT_InBuffer[i] = (float)_AdcMicrophone[i];
 	  }
 
-	  CalculateFFT(&FFTHandler, FFT_InBuffer, FFT_OutBuffer, &FftData);
+	  CalculateFFT(&_FFTHandler, _FFT_InBuffer, _FFT_OutBuffer, &_FftData);
 
-	  osMessageQueuePut(QueueFftDataHandle, &FftData, 0, osWaitForever);
+	  osMessageQueuePut(QueueFftDataHandle, &_FftData, 0, osWaitForever);
   }
   /* USER CODE END StartFFTTask */
 }
@@ -380,6 +395,14 @@ void TimerBmpDataCallback(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+
+/** _putchar
+ * @brief Implementation of low level output function needed for printf().
+ *
+ * @param character Character to print.
+ *
+ * @retval None.
+ * */
 void _putchar(char character)
 {
   // send char to console etc.
@@ -396,12 +419,31 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 	}
 }
 
-
+/** complexABS
+ * @brief Calculate absolute values from complex nums.
+ * Used in CalculateFFT.
+ *
+ * @param real Real part.
+ * @param compl Imaginary part.
+ *
+ * @retval Absolute value.
+ * */
 float complexABS(float real, float compl)
 {
 	return sqrt(real * real + compl * compl);
 }
 
+/** CalculateFFT
+ * @brief Calculate FFT from data measured by microphone.
+ * Arm math instructions were used to speed up calculations.
+ *
+ * @param FFTHandler Pointer to instance structure for the floating-point RFFT/RIFFT function..
+ * @param FFT_InBuffer Pointer to input data buffer.
+ * @param FFT_OutBuffer Pointer to output data buffer.
+ * @param FftData Pointer to output frequency data.
+ *
+ * @retval None.
+ * */
 void CalculateFFT(arm_rfft_fast_instance_f32 *FFTHandler,float *FFT_InBuffer, float *FFT_OutBuffer, FftData_t *FftData)
 {
 	arm_rfft_fast_f32(FFTHandler, FFT_InBuffer, FFT_OutBuffer, 0);
@@ -434,7 +476,5 @@ void CalculateFFT(arm_rfft_fast_instance_f32 *FFTHandler,float *FFT_InBuffer, fl
 	FftData->OutFreqArray[9] = (uint8_t)Freqs[344]; //15000 Hz
 
 	vPortFree(Freqs);
-
 }
 /* USER CODE END Application */
-
