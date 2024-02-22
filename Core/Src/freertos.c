@@ -122,11 +122,6 @@ osMutexId_t MutexI2C1Handle;
 const osMutexAttr_t MutexI2C1_attributes = {
   .name = "MutexI2C1"
 };
-/* Definitions for MutexBmpData */
-osMutexId_t MutexBmpDataHandle;
-const osMutexAttr_t MutexBmpData_attributes = {
-  .name = "MutexBmpData"
-};
 /* Definitions for SemaphoreBmpQueue */
 osSemaphoreId_t SemaphoreBmpQueueHandle;
 const osSemaphoreAttr_t SemaphoreBmpQueue_attributes = {
@@ -161,9 +156,6 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of MutexI2C1 */
   MutexI2C1Handle = osMutexNew(&MutexI2C1_attributes);
-
-  /* creation of MutexBmpData */
-  MutexBmpDataHandle = osMutexNew(&MutexBmpData_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -478,3 +470,4 @@ void CalculateFFT(arm_rfft_fast_instance_f32 *FFTHandler,float *FFT_InBuffer, fl
 	vPortFree(Freqs);
 }
 /* USER CODE END Application */
+
