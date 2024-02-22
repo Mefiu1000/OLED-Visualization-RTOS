@@ -8,24 +8,24 @@
 #ifndef INC_BMP280_H_
 #define INC_BMP280_H_
 
-//adres czujnika
+//	Sensor address
 #define BMP280_ADDRESS 0x76
 
-//	Rozdzielczosc temperatury
+//	Temperature resolution
 
 #define BMP280_Temp_16Bit 1
 
-//	Rozdzielczosc cisnienia
+//	Pressure resolution
 
 #define BMP280_Press_16Bit 1
 
-//	Tryb
+//	Operation mode
 
 #define BMP280_SleepMode  0
 #define BMP280_ForcedMode 1
 #define BMP280_NormalMode 3
 
-//	Rejestry kompensacyjne
+//	Compensation registers
 
 #define	BMP280_DIG_T1 0x88
 #define	BMP280_DIG_T2 0x8A
@@ -40,7 +40,7 @@
 #define	BMP280_DIG_P8 0x9C
 #define	BMP280_DIG_P9 0x9E
 
-//	Rejestry pozostale
+//	Other registers
 
 #define	BMP280_Chip_ID	  0xD0
 #define	BMP280_Ctrl_Meas  0xF4

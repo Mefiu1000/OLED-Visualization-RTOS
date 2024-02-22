@@ -14,6 +14,14 @@ uint16_t T1, P1; 				// config registers
 int16_t T2, T3, P2, P3, P4, P5, P6, P7, P8, P9;
 int32_t  t_fine;
 
+
+/** Read8Bit
+ * @brief Reads 8 bits register.
+ *
+ * @param Register Register address to read.
+ *
+ * @retval Read register.
+ * */
 static uint8_t Read8bit(uint8_t Register)
 {
 	uint8_t Value;
@@ -23,83 +31,132 @@ static uint8_t Read8bit(uint8_t Register)
 	return Value;
 }
 
+/** Write8bit
+ * @brief Writes 8 bits register.
+ *
+ * @param Register Register address to write.
+ * @param Value Value to write to the register.
+ *
+ * @retval None.
+ * */
 static void Write8bit(uint8_t Register, uint8_t Value)
 {
 
 	HAL_I2C_Mem_Write(BMP_I2C, ((BMP280_ADDRESS) << 1), Register, 1, &Value, 1, 1000);
 }
 
+/** Read16Bit
+ * @brief Reads 16 bits register.
+ *
+ * @param Register Register address to read.
+ *
+ * @retval Read register.
+ * */
 static uint16_t Read16bit(uint8_t Register)
 {
-	uint8_t Value[2]; //tablica dwuelementowa zamiast uint16_t bo funkcja hal czyta 8bitowe dane
+	uint8_t Value[2]; //2 elements array instead of uint16_t bcs HAL reads 8-bit data
 
 	HAL_I2C_Mem_Read(BMP_I2C, ((BMP280_ADDRESS) << 1), Register, 1, Value, 2, 1000);
 
 	return (Value[0] | (Value[1] << 8));
 }
 
+/** Read16Bit
+ * @brief Reads 24 bits register.
+ *
+ * @param Register Register address to read.
+ *
+ * @retval Read register.
+ * */
 static uint32_t Read24bit(uint8_t Register)
 {
-	uint8_t Value[3]; //tablica 3- elementowa zamiast uint32_t
+	uint8_t Value[3]; //3 elements array instead of uint32_t
 
 	HAL_I2C_Mem_Read(BMP_I2C, ((BMP280_ADDRESS) << 1), Register, 1, Value, 3, 1000);
 
 	return (Value[2] | (Value[1] << 8) | (Value[0] << 16));
 }
 
-//Funkcja odpowiadajaca za ustawienie trybu pracy
+/** Read16Bit
+ * @brief Set BMP280 operation mode (see documentation).
+ *
+ * @param Mode Mode value to set.
+ *
+ * @retval None.
+ * */
 void BMP280_SetMode(uint8_t Mode)
 {
-	uint8_t CTRL; //zmienna pomocnicza do przechowania rejestru control
+	uint8_t CTRL; 	//auxiliary variable to store control register
 
 	if(Mode > 3)
 		Mode = 3;
 
 	CTRL = Read8bit(BMP280_Ctrl_Meas);
-	CTRL = CTRL & 0xFC; // xxxx xx00, zerowanie 2 najmlodszych bitow
+	CTRL = CTRL & 0xFC; //xxxx xx00, zeroing 2 LSB
 	CTRL |= Mode;
 
 	Write8bit(BMP280_Ctrl_Meas, CTRL);
 }
 
+/** BMP280_SetTemperature
+ * @brief Set temperature oversampling mode
+ * 		to change temperature resolution (see documentation).
+ *
+ * @param Temperature Mode value to set.
+ *
+ * @retval None.
+ * */
 void BMP280_SetTemperature(uint8_t Temperature)
 {
-	uint8_t CTRL; //zmienna pomocnicza do przechowania rejestru control
+	uint8_t CTRL; //auxiliary variable to store control register
 
 	if(Temperature > 5)
 		Temperature = 5;
 
 	CTRL = Read8bit(BMP280_Ctrl_Meas);
-	CTRL = CTRL & 0x1F; // 000x xxxx, zerowanie bitow 5,6,7
+	CTRL = CTRL & 0x1F; // 000x xxxx, zeroing bits 5,6,7
 	CTRL |= (Temperature << 5);
 
 	Write8bit(BMP280_Ctrl_Meas, CTRL);
 }
 
+/** BMP280_SetPressure
+ * @brief Set pressure oversampling mode
+ * 		to change pressure resolution (see documentation).
+ *
+ * @param Pressure Mode value to set.
+ *
+ * @retval None.
+ * */
 void BMP280_SetPressure(uint8_t Pressure)
 {
-	uint8_t CTRL; //zmienna pomocnicza do przechowania rejestru control
+	uint8_t CTRL; //auxiliary variable to store control register
 
 	if(Pressure > 5)
 		Pressure = 5;
 
 	CTRL = Read8bit(BMP280_Ctrl_Meas);
-	CTRL = CTRL & 0xE3; // xxx000xx, zerowanie bitow 4,3,2
+	CTRL = CTRL & 0xE3; // xxx000xx, zeroing bits 4,3,2
 	CTRL |= (Pressure << 2);
 
 	Write8bit(BMP280_Ctrl_Meas, CTRL);
 }
 
+/** BMP280_ReadTemperature
+ * @brief Read measured temperature from sensor.
+ *
+ * @param None.
+ *
+ * @retval Temperature value.
+ * */
 float BMP280_ReadTemperature(void)
 {
 	int32_t var1, var2, T, adc_T;
 
-	//odczytanie rejestru z temp
 	adc_T = (int32_t) Read24bit(BMP280_Temp_Data);
 	adc_T >>= 4;
 
-	//algorytm kompensujacy z dokumentacji
-
+	//compensation algorithm (see documentation)
 	var1 = ((((adc_T >> 3) - ((int32_t) (T1) << 1))) * ((int32_t) (T2))) >> 11;
 	var2 = (((((adc_T >> 4) - ((int32_t) (T1))) * ((adc_T >> 4) - ((int32_t) (T1)))) >> 12) * ((int32_t) (T3))) >> 14;
 	t_fine = var1 + var2;
@@ -107,18 +164,26 @@ float BMP280_ReadTemperature(void)
 	return (float) (T / 100.0); //  change it to instantly equal 51.23
 }
 
+/** BMP280_ReadPressureTemp
+ * @brief Read measured temperature and pressure from sensor.
+ * To read pressure it is necessary to read temperature (see documentation)
+ *
+ * @param *P Pointer to variable, where pressure value is stored.
+ * @param *T Pointer to variable, where temperature value is stored.
+ *
+ * @retval 0 (could be used to handle errors or smth).
+ * */
 uint8_t BMP280_ReadPressureTemp(float *P, float *T)
 {
 	int32_t var1, var2, adc_P;
 	uint32_t p;
 
-	*T = BMP280_ReadTemperature(); //odczyt temperatury
-	//odczytanie rejestru z cisnieniem
+	*T = BMP280_ReadTemperature(); //read temperature
+
 	adc_P = (int32_t) Read24bit(BMP280_Press_Data);
 	adc_P >>= 4;
 
-	//algorytm kompensujacy z dokumentacji
-
+	//compensation algorithm (see documentation)
 	var1 = (((int32_t) t_fine) >> 1) - (int32_t) 64000;
 	var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((int32_t) (P6));
 	var2 = var2 + ((var1 * ((int32_t) (P5))) << 1);
@@ -147,7 +212,15 @@ uint8_t BMP280_ReadPressureTemp(float *P, float *T)
 	return 0;
 }
 
-uint8_t BMP280_Init( I2C_HandleTypeDef *I2C) //wskaznik na i2c
+/** BMP280_Init
+ * @brief Initialize BMP280 configuration parameters. (see documentation)
+ *
+ * @param *i2c Pointer to a I2C_HandleTypeDef structure that contains
+ * 				the configuration information for BMP280.
+ *
+ * @retval Init success/error.
+ * */
+uint8_t BMP280_Init( I2C_HandleTypeDef *I2C)
 {
 	uint8_t Chip_ID;
 
@@ -155,12 +228,12 @@ uint8_t BMP280_Init( I2C_HandleTypeDef *I2C) //wskaznik na i2c
 
 	Chip_ID = Read8bit(BMP280_Chip_ID);
 
-	if(Chip_ID != 0x58) //taka wartosc ma sie znajdowac pod tym rejestrem czyt. dok.
+	if(Chip_ID != 0x58) //BMP280 ID (see documentation)
 	{
-		return 1; //oznaczenie bledu
+		return 1; //ERROR
 	}
 
-	//Odczytanie rejestrow configuracyjnych
+	//Read configuration registers
 	T1 = Read16bit(BMP280_DIG_T1);
 	T2 = Read16bit(BMP280_DIG_T2);
 	T3 = Read16bit(BMP280_DIG_T3);
